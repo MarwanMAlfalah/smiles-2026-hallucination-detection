@@ -16,6 +16,8 @@ Running `python solution.py` extracts hidden-state features from the provided Qw
 - `results.json`
 - `predictions.csv`
 
+`predictions.csv` contains the final predictions for the provided unlabeled `test.csv` file.
+
 ## 2. Main idea
 
 The first simple idea was to use hidden representations from several transformer layers. That gave useful signal, but concatenating many raw vectors creates a high-dimensional feature space, which is risky for a dataset with only 689 labelled samples.
@@ -66,24 +68,22 @@ The classifier uses `StandardScaler` and `LogisticRegression` with balanced clas
 
 ## 5. Experiments considered
 
-I tried a few directions before settling on the final version.
+The Rich Layer-Stability Probe used mean and last-token vectors from several layers. It gave useful signal, but it also created a large feature vector and showed more overfitting. Its internal held-out test split AUROC was `0.625`.
 
-The Rich Layer-Stability Probe used mean and last-token vectors from several layers. It gave useful signal, but it also created a large feature vector and showed more overfitting. Its held-out test AUROC was `0.625`.
+The Compact Spectral Trajectory Probe used only scalar statistics from hidden states. It reduced the feature dimension to 86 and improved accuracy/F1 in some places, but it did not improve the primary AUROC metric. Its internal held-out test split AUROC was `0.600`.
 
-The Compact Spectral Trajectory Probe used only scalar statistics from hidden states. It reduced the feature dimension to 86 and improved accuracy/F1 in some places, but it did not improve the primary AUROC metric. Its held-out test AUROC was `0.600`.
-
-The final Single-Best-Layer Probe gave the best validation and held-out AUROC among my attempts. Its held-out test AUROC was `0.664`.
+The final Single-Best-Layer Probe gave the best validation and internal held-out test split AUROC among my attempts. Its internal held-out test split AUROC was `0.664`.
 
 ## 6. Results
 
-Final results:
+Final internal validation/evaluation results:
 
 - validation AUROC: `0.7269`
-- held-out test AUROC: `0.6642`
-- held-out test accuracy: `0.7115`
-- held-out test F1: `0.8125`
+- internal held-out test split AUROC: `0.6642`
+- internal held-out test split accuracy: `0.7115`
+- internal held-out test split F1: `0.8125`
 
-The dataset is small, so I treated the validation and held-out test numbers as guidance rather than absolute proof. The main goal was to find a probe that improved AUROC while staying simple and reproducible.
+The dataset is small, so I treated the validation and internal held-out test split numbers as guidance rather than absolute proof.
 
 ## 7. Files modified
 
@@ -94,4 +94,4 @@ The final solution modifies:
 
 `splitting.py` was left unchanged because the existing stratified split was already appropriate.
 
-This solution is intentionally lightweight. I chose not to fine-tune the language model or add external models, because the goal was to keep the pipeline reproducible and focused on hidden-state probing within the provided project structure.
+This solution is intentionally lightweight. I chose not to fine-tune the language model or add external models, because I wanted to keep the pipeline reproducible and focused on hidden-state probing within the provided project structure.
