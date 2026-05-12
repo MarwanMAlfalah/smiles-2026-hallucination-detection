@@ -21,7 +21,8 @@ import torch
 import torch.nn.functional as F
 
 
-_LAYER_FRACTIONS = (0.35, 0.55, 0.75, 0.90, 1.00)
+_LAYER_FRACTIONS = (0.30, 0.50, 0.70, 0.90, 1.00)
+_EPS = 1e-8
 
 
 def _selected_layer_indices(n_layers: int) -> list[int]:
@@ -82,35 +83,40 @@ def aggregate(
         Replace or extend the skeleton below with alternative layer selection,
         token pooling (mean, max, weighted), or multi-layer fusion strategies.
     """
-    layer_indices, mean_vectors = _selected_layer_means(hidden_states, attention_mask)
+    layer_indices = _selected_layer_indices(hidden_states.shape[0])
     real_positions = _real_token_positions(attention_mask).to(hidden_states.device)
-    last_pos = int(real_positions[-1].item())
+    last_pos = int(real_positions[real_positions.numel() - 1].item())
 
-    pooled_features = []
-    for layer_idx, mean_vector in zip(layer_indices, mean_vectors):
-        last_token_vector = hidden_states[layer_idx, last_pos]
-        pooled_features.extend([mean_vector, last_token_vector])
+    last_vectors = []
+    for layer_idx in layer_indices:
+        last_vectors.append(hidden_states[layer_idx, last_pos])
 
-    if mean_vectors.shape[0] > 1:
-        previous = mean_vectors[:-1]
-        current = mean_vectors[1:]
+    layer_matrix = torch.stack(last_vectors, dim=0)
+    flat_layer_vectors = layer_matrix.flatten()
+
+    layer_norms = torch.linalg.vector_norm(layer_matrix, dim=1)
+    if layer_matrix.shape[0] > 1:
+        previous = layer_matrix[:-1]
+        current = layer_matrix[1:]
         layer_distances = torch.linalg.vector_norm(current - previous, dim=1)
-        layer_cosines = F.cosine_similarity(previous, current, dim=1)
+        layer_cosines = F.cosine_similarity(previous, current, dim=1, eps=_EPS)
+        end_to_end = torch.linalg.vector_norm(layer_matrix[-1] - layer_matrix[0])
     else:
-        layer_distances = mean_vectors.new_zeros(0)
-        layer_cosines = mean_vectors.new_zeros(0)
+        layer_distances = layer_matrix.new_zeros(0)
+        layer_cosines = layer_matrix.new_zeros(0)
+        end_to_end = layer_matrix.new_zeros(())
 
-    scalar_features = torch.cat(
+    scalar_tail = torch.cat(
         [
-            torch.linalg.vector_norm(mean_vectors, dim=1),
+            layer_norms,
             layer_distances,
             layer_cosines,
-            mean_vectors.std(dim=1),
+            end_to_end.reshape(1),
         ],
         dim=0,
     )
 
-    return torch.cat([*pooled_features, scalar_features], dim=0)
+    return torch.cat([flat_layer_vectors, scalar_tail], dim=0)
 
 
 def extract_geometric_features(
@@ -159,7 +165,10 @@ def extract_geometric_features(
         ]
     )
 
-    return torch.cat([sequence_length, token_norm_summary, layer_norm_summary], dim=0)
+    return torch.cat(
+        [sequence_length, token_norm_summary, layer_norm_summary],
+        dim=0,
+    )
 
 
 def aggregation_and_feature_extraction(
