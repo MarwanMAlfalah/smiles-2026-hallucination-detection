@@ -4,6 +4,18 @@ Detect whether a small language
 model's answer is *hallucinated* (fabricated) or *truthful* using the model's
 own internal representations (hidden states).
 
+## My Submission
+
+This repository contains my final solution for the SMILES-2026 Hallucination Detection application project.
+
+Main files:
+
+- [SOLUTION.md](./SOLUTION.md) — explanation of the final approach, experiments, and results
+- [predictions.csv](./predictions.csv) — final predictions for the provided unlabeled test set
+- [results.json](./results.json) — internal validation/evaluation results
+
+Final approach: SAPLMA-inspired single-best-layer hidden-state probing using Qwen2.5-0.5B internal representations.
+
 ## Overview
 
 Large (and small) language models sometimes *hallucinate* — they generate
