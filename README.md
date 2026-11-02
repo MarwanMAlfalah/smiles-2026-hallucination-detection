@@ -1,155 +1,109 @@
-# 🔍 SMILES-2026 Hallucination Detection
+# Hallucination Detection from Hidden States
 
-Detect whether a small language
-model's answer is *hallucinated* (fabricated) or *truthful* using the model's
-own internal representations (hidden states).
+SMILES 2026 · Qwen2.5-0.5B · Hidden-State Probing
 
-## My Submission
+This repository contains my SMILES 2026 solution for detecting hallucinated versus truthful responses using internal hidden-state representations from Qwen2.5-0.5B. The final method uses a SAPLMA-inspired single-best-layer probe with regularized logistic regression and reproducible internal evaluation.
 
-This repository contains my final solution for the SMILES-2026 Hallucination Detection application project.
+## Research Question
 
-Main files:
+Can internal transformer representations provide a lightweight signal for distinguishing truthful from hallucinated responses without fine-tuning the underlying language model?
 
-- [SOLUTION.md](./SOLUTION.md) — explanation of the final approach, experiments, and results
-- [predictions.csv](./predictions.csv) — final predictions for the provided unlabeled test set
-- [results.json](./results.json) — internal validation/evaluation results
+## My Contribution
 
-Final approach: SAPLMA-inspired single-best-layer hidden-state probing using Qwen2.5-0.5B internal representations.
+My contribution is the submitted probing solution and its documented experiments:
 
-## Overview
+- Designed hidden-state feature extraction using candidate layers, last-real-token representations, and geometric/scalar auxiliary features.
+- Trained regularized logistic-regression probes with cross-validation, validation-based layer selection, and decision threshold tuning.
+- Compared alternative probing approaches and documented their internal evaluation results in a reproducible Python pipeline.
 
-Large (and small) language models sometimes *hallucinate* — they generate
-plausible-sounding text that is factually incorrect.  This competition asks you
-to build a **lightweight binary classifier** (called a *probe*) that reads the
-model's internal hidden states and predicts whether a given response is
-truthful (`label = 0`) or hallucinated (`label = 1`).
+The final solution modifies [`aggregation.py`](./aggregation.py) and [`probe.py`](./probe.py). `splitting.py` remains unchanged. The model-loading code, original dataset, and evaluation framework are organizer-provided challenge infrastructure.
 
-The language model used throughout is **[Qwen/Qwen2.5-0.5B](https://huggingface.co/Qwen/Qwen2.5-0.5B)** — a
-decoder-only causal transformer with 24 layers and a hidden dimension of 896.
-It fits comfortably on a free Google Colab T4 GPU.
+## Method
 
-**Primary ranking metric:** Accuracy on the held-out `test.csv`.
+### Model
 
-## Repository Structure
+Qwen2.5-0.5B, used without base-model fine-tuning.
 
-```
-SMILES-HALLUCINATION-DETECTION/
-├── data/
-│   ├── dataset.csv        # Labelled training data (prompt, response, label)
-│   └── test.csv           # Unlabelled competition test set
-│
-├── solution.py            # Main script - run to create a 
-│
-│   ── Files you implement ──────────────────────────────────────────────
-├── aggregation.py         # Layer selection, token pooling, geometric features
-├── probe.py               # HallucinationProbe — the binary classifier
-├── splitting.py           # Train / validation / test split strategy
-│
-│   ── Fixed infrastructure (do not edit) ───────────────────────────────
-├── model.py               # Loads Qwen2.5-0.5B and exposes get_model_and_tokenizer()
-├── evaluate.py            # Evaluation loop, metrics, summary table, JSON output
-│
-├── requirements.txt       # Python dependencies
-└── LICENSE
-```
+### Data
 
+689 labelled prompt-response samples in `data/dataset.csv`, with `0` denoting truthful and `1` hallucinated. The separate, unlabelled `data/test.csv` is used to generate submission predictions.
 
-## Quick Start
+### Representation
 
-### Google Colab
+Candidate transformer layers are selected at approximately `0.30`, `0.50`, `0.70`, `0.90`, and `1.00` of model depth. Each contributes the hidden vector of the last real non-padding token in the full prompt-response sequence. Small geometric/scalar auxiliary features capture norms, distances, and cosine similarities.
 
-Open the terminal in Colab and run:
+### Probe
 
-```python
-git clone https://github.com/ahdr3w/SMILES-HALLUCINATION-DETECTION.git
-cd SMILES-HALLUCINATION-DETECTION
-pip install -r requirements.txt
-python solution.py
-```
+Regularized logistic regression with scikit-learn's `StandardScaler` and balanced class weights, trained separately on candidate layer representations.
 
-### Local Setup
+### Model selection
+
+- Select regularization strength using 3-fold stratified cross-validation on the training split.
+- Select the layer using validation AUROC; also examine a top-3 probability ensemble and a best-layer-plus-auxiliary-feature hybrid.
+- Tune the decision threshold on the validation set for F1.
+
+See [`SOLUTION.md`](./SOLUTION.md) for the complete methodology and experiment notes. The method is SAPLMA-inspired; it does not implement SAPLMA itself.
+
+## Results
+
+The committed [`results.json`](./results.json) records one internal evaluation split/fold of the 689 labelled samples: 481 training, 104 validation, and 104 held-out samples. Values below are rounded to four decimal places.
+
+| Metric | Value |
+| --- | ---: |
+| Validation AUROC | 0.7269 |
+| Internal held-out AUROC | 0.6642 |
+| Internal held-out accuracy | 0.7115 |
+| Internal held-out F1 | 0.8125 |
+
+These are internal evaluation results, not scores on the separate unlabelled test set or an external benchmark.
+
+### Comparison with attempted variants
+
+The experiments documented in [`SOLUTION.md`](./SOLUTION.md) report:
+
+| Variant | Internal held-out AUROC (approx.) |
+| --- | ---: |
+| Rich Layer-Stability Probe | 0.625 |
+| Compact Spectral Trajectory Probe | 0.600 |
+| Final Single-Best-Layer Probe | 0.664 |
+
+The final approach achieved the strongest internal held-out AUROC among the documented variants.
+
+## Limitations
+
+- The dataset contains only 689 labelled samples, and the committed metrics cover one internal validation/held-out split.
+- No external benchmark validation is claimed; these results do not establish broad generalization across models or domains.
+- No base-model fine-tuning was performed; the experiments evaluate probes over the provided model's hidden states.
+
+## Reproducibility
+
+From a fresh checkout:
 
 ```bash
-git clone https://github.com/ahdr3w/SMILES-HALLUCINATION-DETECTION.git
-cd SMILES-HALLUCINATION-DETECTION
+git clone https://github.com/MarwanMAlfalah/smiles-2026-hallucination-detection.git
+cd smiles-2026-hallucination-detection
 
 python -m venv .venv
-source .venv/bin/activate        # Linux / macOS
-# .venv\Scripts\activate.bat     # Windows
+source .venv/bin/activate
 
 pip install -r requirements.txt
 python solution.py
 ```
 
-## Dataset
+On Windows Command Prompt, activate the environment with `.venv\Scripts\activate.bat`.
 
-`data/dataset.csv` contains 689 labelled samples with three columns:
+Running `python solution.py` extracts hidden-state features, trains and evaluates the probe, and writes `results.json` and `predictions.csv`. The predictions correspond to the provided unlabelled `data/test.csv`.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `prompt` | str | Full ChatML-formatted conversation context fed to Qwen |
-| `response` | str | The model's generated response |
-| `label` | float | `1.0` = hallucinated · `0.0` = truthful |
+## Research Artifacts
 
-The `prompt` uses the **ChatML** template built into Qwen models:
+- [`SOLUTION.md`](./SOLUTION.md) — complete methodology and experiment notes.
+- [`results.json`](./results.json) — committed internal evaluation metrics.
+- [`predictions.csv`](./predictions.csv) — predictions generated by the final pipeline.
 
-```
-<|im_start|>system
-You are a helpful assistant.<|im_end|>
-<|im_start|>user
-Given the context, answer the question …<|im_end|>
-<|im_start|>assistant
-```
+The implementation is in [`aggregation.py`](./aggregation.py) (hidden-state feature extraction) and [`probe.py`](./probe.py) (probe training and selection). [`solution.py`](./solution.py) is the end-to-end reproducibility entry point.
 
+## Challenge Context & Attribution
 
-`data/test.csv` is structured identically but the `label` column is null - these are the samples you submit predictions for via a `predictions.csv` generated file.
+This repository contains Marwan's solution to the SMILES 2026 hallucination-detection task. The organizers provided the base challenge infrastructure and dataset specification. My contribution is the submitted probing solution in `aggregation.py` and `probe.py`, together with the documented experimentation.
 
-
-## What You Implement
-
-You are expected to edit **three files**:  
-- `aggregation.py`
-- `probe.py`
-- `splitting.py`
-
-The rest of the codebase shall remain untouched.
-
-**Feature Engineering & Dimensionality Reduction**: Applicants are encouraged to experiment with adding hand-crafted features during the aggregation step, drawing on geometrical or topological methods to enrich the representation of probe outputs. Additionally, you may apply dimensionality reduction techniques within probe.py to compress or refine the feature space. 
-
-## Evaluation
-
-For each fold `evaluate.py` reports four numbers:
-
-| # | Checkpoint | Metrics |
-|---|-----------|---------|
-| 1 | Majority-class baseline | Accuracy, F1 |
-| 2 | `HallucinationProbe` on **training** split | Accuracy, F1, AUROC |
-| 3 | `HallucinationProbe` on **validation** split | Accuracy, F1, AUROC |
-| 4 | `HallucinationProbe` on **test** split | Accuracy, F1, AUROC |
-
-**Accuracy on the `test.csv` is the primary competition metric.**
-
-Results are averaged across folds (if using k-fold) and saved to
-`results.json`.
-
-
-# What is expected from the applicant of SMILES-2026 ?
-
-**Q1:** What must the applicant submit in the application form ?<br>
-**A1:** Submit: 
-1. A link to your Github repository
-2. A link to your `predictions.csv` publicly available file on some cloud storage
-
-**Q2:** What the applicants must include in the repository ?<br>
-**A2:** Your repository must contain: 
-1. `results.json` - produced by the official `solution.py`
-2. Report file in Markdown format `SOLUTION.md`. 
-
-**Q3:** Report requirements (`SOLUTION.md`)<br>
-**A3:** Your report must include:<br>
-- Reproducibility instructions: exact commands to run your solution and acquire the same `predictions.csv`, required environment (if any), any important implementation details needed to reproduce your result.
-- Final solution description: What components you modified ? What your final approach is ? Why you made these choices ? What contributed most to improving the metric ?
-- Experiments and failed attempts: What ideas you tried but did not include in the final solution ? Why they did not work or were discarded ?
-
-**Q4:** Reproducibility<br>
-**A4:** The repository must be self-contained and runnable with the provided `solution.py` file. Your solution must not require changes to the fixed infrastructure files. Running `solution.py` must generate your submitted `predictions.csv`.
+[Original challenge repository](https://github.com/ahdr3w/SMILES-HALLUCINATION-DETECTION).
